@@ -1,0 +1,70 @@
+from aiogram.types import (InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup)
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+from . import db as S
+
+PACKS = (50, 100, 250, 500, 1000, 2500)
+
+BTN_BUY = "⭐ Купить звёзды"
+BTN_ORDERS = "📦 Мои заказы"
+BTN_HELP = "ℹ️ Помощь"
+
+
+def main_menu() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=BTN_BUY)],
+                  [KeyboardButton(text=BTN_ORDERS), KeyboardButton(text=BTN_HELP)]],
+        resize_keyboard=True,
+    )
+
+
+def recipient_kb(has_username: bool) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    if has_username:
+        b.button(text="🙋 Себе", callback_data="rcpt:self")
+    b.button(text="🎁 Другу (ввести @username)", callback_data="rcpt:other")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def packs_kb(prices: dict[int, str]) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for p in PACKS:
+        b.button(text=f"{p} ⭐ — {prices[p]} ₽", callback_data=f"pack:{p}")
+    b.button(text="✏️ Своё количество", callback_data="pack:custom")
+    b.button(text="« Назад", callback_data="back:recipient")
+    b.adjust(2, 2, 2, 1, 1)
+    return b.as_markup()
+
+
+def pay_method_kb() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="🏦 СБП", callback_data="pay:sbp")
+    b.button(text="💎 Криптовалюта", callback_data="pay:crypto")
+    b.button(text="« Назад", callback_data="back:packs")
+    b.adjust(2, 1)
+    return b.as_markup()
+
+
+def payment_kb(order_id: int, url: str) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="💳 Оплатить", url=url)
+    b.button(text="🔄 Проверить оплату", callback_data=f"check:{order_id}")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def admin_order_kb(o) -> InlineKeyboardMarkup | None:
+    b = InlineKeyboardBuilder()
+    if o.status == S.PAID:
+        b.button(text="✋ Беру в работу", callback_data=f"adm:take:{o.id}")
+        b.button(text="⚡ Отправить автоматически", callback_data=f"adm:auto:{o.id}")
+        b.button(text="✅ Уже отправил вручную", callback_data=f"adm:done:{o.id}")
+    elif o.status in (S.MANUAL, S.FAILED, S.UNCERTAIN):
+        b.button(text="✅ Отправил вручную", callback_data=f"adm:done:{o.id}")
+        if o.status != S.UNCERTAIN:
+            b.button(text="⚡ Отправить автоматически", callback_data=f"adm:auto:{o.id}")
+    else:
+        return None
+    b.adjust(1)
+    return b.as_markup()
