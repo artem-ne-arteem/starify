@@ -29,7 +29,7 @@ STATUS_TEXT = {
     S.CANCELED: "❌ отменён",
 }
 
-METHOD_TEXT = {"sbp": "СБП", "crypto": "Крипта"}
+METHOD_TEXT = {"sbp": "СБП", "crypto": "Крипта", "test": "🧪 ТЕСТ"}
 
 
 class Shop:
@@ -135,6 +135,11 @@ class Shop:
             return
         await self.refresh_admin_messages(order_id)
         o = await self.db.get_order(order_id)
+
+        if o.method == "test":  # тестовый заказ — никаких реальных звёзд
+            await self.mark_delivered(order_id, f"{by} [тест, звёзды не отправлялись]",
+                                      (S.PROCESSING,))
+            return
 
         res = await self.fragment.send_stars(o.recipient, o.stars)
         if res.ok:

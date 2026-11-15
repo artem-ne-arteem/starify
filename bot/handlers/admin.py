@@ -36,13 +36,33 @@ async def admin_action(c: CallbackQuery, shop: Shop):
                        show_alert=not ok)
 
     elif action == "auto":
+        o = await shop.db.get_order(order_id)
         avail, why = shop.fragment.available
-        if not avail:
+        if not avail and o.method != "test":
             await c.answer(f"Автодоставка недоступна: {why}", show_alert=True)
             return
         await c.answer("Отправляю через Fragment…")
         await shop.auto_deliver(order_id, by=f"авто ({who})",
                                 from_statuses=(S.PAID, S.MANUAL, S.FAILED))
+
+
+@router.message(Command("testorder"))
+async def test_order(m: Message, command: CommandObject, shop: Shop):
+    """Фейковый оплаченный заказ: проверка уведомлений. Звёзды НЕ отправляются."""
+    if not is_admin(m.from_user.id, shop):
+        return
+    stars, recipient = 50, m.from_user.username or "test_user"
+    for arg in (command.args or "").split():
+        if arg.isdigit():
+            stars = int(arg)
+        else:
+            recipient = arg.lstrip("@")
+    total = await shop.price_for(stars)
+    order_id = await shop.db.create_order(m.from_user.id, recipient, stars, str(total), "test")
+    await shop.db.set_payment(order_id, f"test-{order_id}", "")
+    await m.answer(f"🧪 Создан тестовый заказ #{order_id}, имитирую оплату…\n"
+                   "Звёзды по нему отправляться не будут.")
+    await shop.on_paid(await shop.db.get_order(order_id))
 
 
 @router.message(Command("admin"))
@@ -51,6 +71,7 @@ async def admin_help(m: Message, shop: Shop):
         return
     await m.answer(
         "🛠 <b>Админка Starify</b>\n"
+        "/testorder [кол-во] [@username] — тестовый заказ (звёзды не отправляются)\n"
         "/stats — статистика\n"
         "/price 1.6 — изменить цену звезды (₽)\n"
         "/orders — заказы, ждущие действий\n"

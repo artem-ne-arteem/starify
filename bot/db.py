@@ -160,7 +160,8 @@ class Database:
     async def stats(self) -> dict:
         cur = await self.conn.execute(
             "SELECT COUNT(*) AS n, COALESCE(SUM(stars),0) AS stars, "
-            "COALESCE(SUM(CAST(amount_rub AS REAL)),0) AS rub FROM orders WHERE status=?",
+            "COALESCE(SUM(CAST(amount_rub AS REAL)),0) AS rub FROM orders "
+            "WHERE status=? AND method!='test'",
             (DELIVERED,),
         )
         done = dict(await cur.fetchone())

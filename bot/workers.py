@@ -17,7 +17,7 @@ async def payment_poller(shop: Shop) -> None:
     while True:
         try:
             for o in await shop.db.orders_by_status(S.PENDING):
-                if not o.tx_id:
+                if not o.tx_id or o.method == "test":
                     continue
                 try:
                     st = await shop.platega.status(o.tx_id)
@@ -42,6 +42,9 @@ async def admin_timeout_watcher(shop: Shop) -> None:
             now = time.time()
             for o in await shop.db.orders_by_status(S.PAID):
                 if o.paid_at and now - o.paid_at >= shop.cfg.admin_timeout_sec:
+                    if o.method == "test":
+                        await shop.auto_deliver(o.id, by="авто (таймаут)")
+                        continue
                     avail, why = shop.fragment.available
                     if not avail:
                         # Автодоставка не настроена — переводим в FAILED и напоминаем админам
