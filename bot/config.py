@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-VERSION = "1.2 (testorder)"
+VERSION = "1.3 (support, colors)"
 
 
 def _env(name: str, default: str = "") -> str:

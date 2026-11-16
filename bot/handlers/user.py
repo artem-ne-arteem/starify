@@ -3,7 +3,7 @@ import re
 from html import escape
 
 from aiogram import F, Router
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
@@ -53,7 +53,8 @@ async def help_(m: Message):
         "1. Выбираешь, кому отправить звёзды и сколько.\n"
         "2. Оплачиваешь через СБП или криптой.\n"
         "3. Звёзды приходят на аккаунт получателя в течение ~5 минут.\n\n"
-        "Звёзды отправляются по @username, поэтому у получателя должен быть юзернейм."
+        "Звёзды отправляются по @username, поэтому у получателя должен быть юзернейм.\n\n"
+        "Остались вопросы? Жми «💬 Поддержка» — ответим прямо здесь."
     )
 
 
@@ -228,3 +229,9 @@ async def check(c: CallbackQuery, shop: Shop):
             await shop.on_canceled(o)
         o = await shop.db.get_order(order_id)
     await c.answer(f"Статус: {STATUS_TEXT.get(o.status, o.status)}", show_alert=True)
+
+
+@router.message(StateFilter(None))
+async def fallback(m: Message):
+    await m.answer("Выбери действие в меню 👇\nЕсть вопрос — жми «💬 Поддержка».",
+                   reply_markup=main_menu())

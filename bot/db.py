@@ -44,6 +44,12 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS support_map (
+    chat_id INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    PRIMARY KEY (chat_id, message_id)
+);
 CREATE TABLE IF NOT EXISTS admin_messages (
     order_id INTEGER NOT NULL,
     chat_id INTEGER NOT NULL,
@@ -168,6 +174,22 @@ class Database:
         cur = await self.conn.execute("SELECT COUNT(*) AS n FROM users")
         users = (await cur.fetchone())["n"]
         return {"users": users, **done}
+
+    # --- поддержка: какое сообщение у админа относится к какому клиенту ---
+    async def support_link(self, chat_id: int, message_id: int, user_id: int) -> None:
+        await self.conn.execute(
+            "INSERT OR REPLACE INTO support_map(chat_id, message_id, user_id) VALUES(?,?,?)",
+            (chat_id, message_id, user_id),
+        )
+        await self.conn.commit()
+
+    async def support_user(self, chat_id: int, message_id: int) -> int | None:
+        cur = await self.conn.execute(
+            "SELECT user_id FROM support_map WHERE chat_id=? AND message_id=?",
+            (chat_id, message_id),
+        )
+        row = await cur.fetchone()
+        return row["user_id"] if row else None
 
     # --- admin notification messages (чтобы обновлять их у всех админов) ---
     async def add_admin_message(self, order_id: int, chat_id: int, message_id: int) -> None:
