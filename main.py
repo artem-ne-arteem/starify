@@ -6,7 +6,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 
-from bot.config import load_config
+from bot.config import VERSION, load_config
 from bot.db import Database
 from bot.fragment import FragmentDelivery
 from bot.handlers import routers
@@ -20,6 +20,7 @@ async def main() -> None:
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     log = logging.getLogger("starify")
     cfg = load_config()
+    log.info("Starify версия %s, админы: %s", VERSION, list(cfg.admin_ids) or "НЕТ")
 
     db = Database(cfg.db_path)
     await db.connect()

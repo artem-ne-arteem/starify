@@ -46,6 +46,16 @@ async def admin_action(c: CallbackQuery, shop: Shop):
                                 from_statuses=(S.PAID, S.MANUAL, S.FAILED))
 
 
+@router.message(Command("id"))
+async def my_id(m: Message, shop: Shop):
+    from ..config import VERSION
+    await m.answer(
+        f"Твой ID: <code>{m.from_user.id}</code>\n"
+        f"Админ: {'да ✅' if is_admin(m.from_user.id, shop) else 'нет ❌'}\n"
+        f"Версия бота: {VERSION}"
+    )
+
+
 @router.message(Command("testorder"))
 async def test_order(m: Message, command: CommandObject, shop: Shop):
     """Фейковый оплаченный заказ: проверка уведомлений. Звёзды НЕ отправляются."""
