@@ -27,6 +27,8 @@ STATUS_TEXT = {
     S.UNCERTAIN: "🔎 проверяется",
     S.FAILED: "⚠️ задержка, админ в курсе",
     S.CANCELED: "❌ отменён",
+    S.REFUNDING: "↩️ отменён, возврат в обработке",
+    S.REFUNDED: "↩️ отменён, деньги возвращены",
 }
 
 METHOD_TEXT = {"sbp": "СБП", "crypto": "Крипта", "test": "🧪 ТЕСТ"}
@@ -63,7 +65,8 @@ class Shop:
             left = max(0, o.paid_at + self.cfg.admin_timeout_sec - int(time.time()))
             extra = f"\n\n⏱ Автоотправка через ~{left // 60} мин {left % 60} с, если не ответишь."
         if o.delivered_by:
-            extra += f"\nВыполнил: {escape(o.delivered_by)}"
+            who = "Отменил" if o.status in (S.REFUNDING, S.REFUNDED) else "Выполнил"
+            extra += f"\n{who}: {escape(o.delivered_by)}"
         if o.note:
             extra += f"\nℹ️ {escape(o.note)}"
         return f"{self.order_text(o)}\nКлиент: <code>{o.user_id}</code>{extra}"
@@ -113,6 +116,67 @@ class Shop:
     async def on_canceled(self, o: Order) -> None:
         if await self.db.transition(o.id, (S.PENDING,), S.CANCELED):
             await self.bot.send_message(o.user_id, f"❌ Оплата заказа #{o.id} отменена или истекла.")
+
+    # ---------- отмена с возвратом ----------
+    async def refund_preview(self, o: Order) -> tuple[bool, str]:
+        """Проверка перед возвратом: можно ли и сколько спишется. Деньги не двигает."""
+        if o.status not in S.REFUNDABLE:
+            return False, "Этот заказ нельзя отменить: звёзды могли уже уйти или он уже закрыт."
+        if o.method == "test":
+            return True, f"🧪 Тестовый заказ: возврат будет имитацией, {o.amount_rub} ₽."
+        try:
+            chk = await self.platega.refund_check(o.tx_id)
+        except Exception as e:
+            return False, f"Platega не дала проверить возврат: {e}"
+        if not chk.get("supported"):
+            from .platega import REFUND_REASONS
+            r = chk.get("blockReason") or "причина не указана"
+            return False, f"Возврат невозможен: {REFUND_REASONS.get(r, r)}"
+        usdt = chk.get("totalDeductUsdt")
+        return True, (f"Клиенту вернётся <b>{o.amount_rub} ₽</b>.\n"
+                      f"С баланса Platega спишется ≈ <b>{usdt} USDT</b> (возврат + комиссия).")
+
+    async def refund(self, order_id: int, by: str) -> str:
+        """Отменяет заказ и запрашивает полный возврат. Возвращает текст для админа."""
+        # Захват заказа: таймер автодоставки и другие кнопки больше его не тронут
+        if not await self.db.transition(order_id, S.REFUNDABLE, S.REFUNDING, delivered_by=by):
+            return "Заказ уже обработан, отменить нельзя."
+        o = await self.db.get_order(order_id)
+
+        if o.method == "test":
+            await self.on_refunded(o)
+            return "🧪 Тестовый заказ отменён, возврат сымитирован."
+
+        try:
+            res = await self.platega.refund(o.tx_id)
+        except Exception as e:
+            log.exception("refund #%s failed", order_id)
+            await self.db.transition(order_id, (S.REFUNDING,), S.FAILED,
+                                     note=f"возврат не удался: {e}")
+            await self.refresh_admin_messages(order_id)
+            return f"❌ Возврат не удался: {e}\nЗаказ снова ждёт решения."
+
+        note = f"возврат {res.get('refundOperationId') or ''}"
+        if res.get("manualControlRequired"):
+            note += " (на ручной проверке Platega)"
+        await self.db.transition(order_id, (S.REFUNDING,), S.REFUNDING, note=note)
+        await self.refresh_admin_messages(order_id)
+        await self.bot.send_message(
+            o.user_id,
+            f"↩️ Заказ #{o.id} отменён. Мы вернём {o.amount_rub} ₽ тем же способом, "
+            "которым ты платил. Сообщим, когда деньги придут.",
+        )
+        extra = ("\nPlatega отправила возврат на ручную проверку — это может занять время."
+                 if res.get("manualControlRequired") else "")
+        return f"↩️ Возврат запрошен. Сообщу, когда Platega его подтвердит.{extra}"
+
+    async def on_refunded(self, o: Order) -> None:
+        if not await self.db.transition(o.id, (S.REFUNDING,), S.REFUNDED):
+            return
+        await self.bot.send_message(
+            o.user_id, f"✅ Деньги за заказ #{o.id} ({o.amount_rub} ₽) возвращены.")
+        await self.refresh_admin_messages(o.id)
+        await self.alert_admins(f"✅ Возврат по заказу #{o.id} ({o.amount_rub} ₽) выполнен.")
 
     # ---------- доставка ----------
     async def mark_delivered(self, order_id: int, by: str, from_statuses: tuple[str, ...]) -> bool:

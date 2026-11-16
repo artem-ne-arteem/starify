@@ -6,6 +6,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import CallbackQuery, Message
 
 from .. import db as S
+from ..keyboards import admin_order_kb, refund_confirm_kb
 from ..service import Shop
 
 router = Router()
@@ -34,6 +35,32 @@ async def admin_action(c: CallbackQuery, shop: Shop):
         ok = await shop.mark_delivered(order_id, who, (S.PAID, S.MANUAL, S.FAILED, S.UNCERTAIN))
         await c.answer("Отмечено как выполнено ✅" if ok else "Заказ уже обработан",
                        show_alert=not ok)
+
+    elif action == "refund":  # шаг 1: проверка и подтверждение
+        o = await shop.db.get_order(order_id)
+        ok, text = await shop.refund_preview(o)
+        if not ok:
+            await c.answer(text[:200], show_alert=True)
+            return
+        await c.message.edit_text(
+            f"{shop.admin_text(o)}\n\n⚠️ <b>Отменить заказ и вернуть деньги?</b>\n{text}",
+            reply_markup=refund_confirm_kb(order_id))
+        await c.answer()
+
+    elif action == "refundok":  # шаг 2: выполнить
+        await c.answer("Запрашиваю возврат…")
+        result = await shop.refund(order_id, who)
+        o = await shop.db.get_order(order_id)
+        try:
+            await c.message.edit_text(shop.admin_text(o), reply_markup=admin_order_kb(o))
+        except Exception:
+            pass
+        await c.message.answer(f"Заказ #{order_id}: {result}")
+
+    elif action == "refundno":
+        o = await shop.db.get_order(order_id)
+        await c.message.edit_text(shop.admin_text(o), reply_markup=admin_order_kb(o))
+        await c.answer("Ок, заказ не отменён")
 
     elif action == "auto":
         o = await shop.db.get_order(order_id)
@@ -122,11 +149,11 @@ async def set_price(m: Message, command: CommandObject, shop: Shop):
 async def open_orders(m: Message, shop: Shop):
     if not is_admin(m.from_user.id, shop):
         return
-    orders = await shop.db.orders_by_status(S.PAID, S.MANUAL, S.PROCESSING, S.FAILED, S.UNCERTAIN)
+    orders = await shop.db.orders_by_status(S.PAID, S.MANUAL, S.PROCESSING, S.FAILED,
+                                            S.UNCERTAIN, S.REFUNDING)
     if not orders:
         await m.answer("Нет заказов, ждущих действий 👌")
         return
-    from ..keyboards import admin_order_kb
     for o in orders:
         await m.answer(shop.admin_text(o), reply_markup=admin_order_kb(o))
 

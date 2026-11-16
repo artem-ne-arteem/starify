@@ -16,6 +16,12 @@ DELIVERED = "delivered"  # звёзды отправлены
 UNCERTAIN = "uncertain"  # транзакция ушла, но подтверждения нет — проверить руками, НЕ повторять
 FAILED = "failed"        # автоотправка не удалась, нужен админ
 CANCELED = "canceled"    # оплата отменена / истекла
+REFUNDING = "refunding"  # админ отменил, возврат запрошен в Platega, ждём подтверждения
+REFUNDED = "refunded"    # деньги вернулись клиенту
+
+# Из каких статусов админ может отменить заказ с возвратом.
+# PROCESSING/UNCERTAIN/DELIVERED нельзя — звёзды могли уже уйти.
+REFUNDABLE = (PAID, MANUAL, FAILED)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (

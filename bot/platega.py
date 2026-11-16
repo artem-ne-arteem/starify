@@ -12,6 +12,21 @@ class PlategaError(Exception):
     pass
 
 
+REFUND_REASONS = {
+    "INSUFFICIENT_FUNDS": "на балансе Platega не хватает USDT для возврата",
+    "PARTIAL_REFUND_EXISTS": "по платежу уже был частичный возврат",
+    "REFUND_IN_PROGRESS": "возврат уже выполняется",
+}
+
+
+class PlategaRefundError(PlategaError):
+    def __init__(self, data):
+        code = (data or {}).get("code") or (data or {}).get("blockReason") or ""
+        msg = (data or {}).get("message") or ""
+        self.code = code
+        super().__init__(REFUND_REASONS.get(code.split(":")[-1], f"{code} {msg}".strip()))
+
+
 @dataclass
 class Transaction:
     id: str
@@ -69,6 +84,26 @@ class Platega:
             status=data.get("status", "PENDING"),
             pay_url=data.get("redirect") or data.get("url"),
         )
+
+    async def refund_check(self, tx_id: str) -> dict:
+        """Можно ли сделать полный возврат. Ничего не списывает.
+        Поля: supported, totalDeductUsdt, blockReason."""
+        http = await self._http()
+        async with http.get(f"/transaction/{tx_id}/cancel-supported") as r:
+            data = await r.json(content_type=None)
+            if r.status != 200:
+                raise PlategaRefundError(data)
+        return data
+
+    async def refund(self, tx_id: str) -> dict:
+        """Полный возврат. Результат асинхронный: итог — статус платежа CHARGEBACKED.
+        Поля: accepted, manualControlRequired, message, refundOperationId."""
+        http = await self._http()
+        async with http.post(f"/transaction/{tx_id}/cancel") as r:
+            data = await r.json(content_type=None)
+            if r.status != 200:
+                raise PlategaRefundError(data)
+        return data
 
     async def status(self, tx_id: str) -> str:
         http = await self._http()

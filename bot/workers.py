@@ -30,6 +30,15 @@ async def payment_poller(shop: Shop) -> None:
                     await shop.on_canceled(o)
                 elif time.time() - o.created_at > PENDING_TTL_SEC:
                     await shop.on_canceled(o)
+            # Возвраты: Platega подтверждает полный возврат статусом CHARGEBACKED
+            for o in await shop.db.orders_by_status(S.REFUNDING):
+                if o.method == "test" or not o.tx_id:
+                    continue
+                try:
+                    if await shop.platega.status(o.tx_id) == "CHARGEBACKED":
+                        await shop.on_refunded(o)
+                except Exception as e:
+                    log.warning("refund status #%s: %s", o.id, e)
         except Exception:
             log.exception("payment_poller")
         await asyncio.sleep(PAYMENT_POLL_SEC)

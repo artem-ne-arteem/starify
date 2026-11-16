@@ -73,6 +73,17 @@ def admin_order_kb(o) -> InlineKeyboardMarkup | None:
                      style=BLUE)
     else:
         return None
+    if o.status in S.REFUNDABLE:
+        b.button(text="↩️ Отменить и вернуть деньги", callback_data=f"adm:refund:{o.id}",
+                 style=RED)
+    b.adjust(1)
+    return b.as_markup()
+
+
+def refund_confirm_kb(order_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="↩️ Да, вернуть деньги", callback_data=f"adm:refundok:{order_id}", style=RED)
+    b.button(text="« Не отменять", callback_data=f"adm:refundno:{order_id}")
     b.adjust(1)
     return b.as_markup()
 
